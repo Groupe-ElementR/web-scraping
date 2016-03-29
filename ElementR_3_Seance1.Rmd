@@ -1,0 +1,207 @@
+---
+title: "Extraire des données depuis Internet"
+date: "`r Sys.Date()`"
+author: "Robin Cura"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+    thumbnails: true
+    lightbox: true
+    gallery: true
+---
+
+
+```{r knitr_init, echo=FALSE, cache=FALSE}
+library(knitr)
+library(rmdformats)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=FALSE,
+	             cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+```{r chargement des packages généralistes}
+# Manipulation de données
+library(dplyr)
+library(tidyr)
+library(sp)
+
+# Cartographie
+library(ggplot2)
+library(mapview)
+
+# Connexion web
+library(jsonlite)
+library(curl)
+library(httr)
+```
+
+
+# Utiliser des *API* à travers des *packages* dédiés
+
+## Récuperer une liste de lieux depuis des pages Wikipedia
+
+```{r pkg wikipedia}
+library(WikipediR)
+
+```
+
+
+### Requête de récupération
+
+### Conversion en format R
+
+### Cartographie
+
+## Trouver le plus court chemin entre ces lieux
+
+### Requête de récupération
+
+### Conversion en format R
+
+### Cartographie
+
+## Créer un profil du trajet
+
+### Segmenter le trajet
+
+### Récuperer l'altitude
+
+### Affichage du profil du trajet
+
+```{r}
+
+library(xml2)
+library(rvest)
+
+# Utilisation d'API
+
+library(osrm)
+library(ggmap) 
+library(rgbif)
+```
+
+
+
+# Récuperer du contenu HTML formaté
+
+
+```{r pkg rvest}
+library(rvest)
+library(xml2)
+```
+
+
+```{r, eval=FALSE}
+baseContent <- read_html(x = "https://fr.wikipedia.org/wiki/Liste_des_communes_de_France_les_plus_peupl%C3%A9es") 
+
+baseTables <- baseContent %>% html_nodes(".wikitable")
+blob <- baseTables[1]
+
+blob2 <- gsub("\\[[^\\]]*\\]", "", blob, perl=TRUE)
+
+
+dfList <- lapply(baseTables, function(x){return(html_table(x, trim = TRUE, dec = ","))})
+villesFr <- dfList[[1]]
+
+removeBrackets <- function(x){
+  gsub("\\[[^\\]]*\\]", "", x, perl=TRUE)
+}
+
+removeBraces <- function(x){
+  gsub("\\([^\\]]*\\)", "", x, perl=TRUE)
+}
+
+removeSpaces <- function(x){
+  str_replace_all(x, "\\s", "")
+}
+
+removeCommas <- function(x){
+  str_replace_all(x, fixed(","), "")
+}
+
+removePluses <- function(x){
+  str_replace_all(x, fixed("+"), "")
+}
+
+colnames(villesFr) <- colnames(villesFr) %>%
+  removeBrackets() %>%
+  removeSpaces() %>%
+  removeCommas()
+
+villesFr2 <- villesFr %>%
+  mutate_each(funs(removeBrackets)) %>%
+  mutate_each(funs(removeCommas)) %>%
+  mutate_each(funs(removeBraces)) %>%
+  mutate_each(funs(removePluses)) %>%
+  mutate_each(funs(removeSpaces), -c(1:4)) %>%
+  mutate_each(funs(as.numeric), -c(1:4))
+
+villesDepts <- villesFr2 %>%
+  group_by(Département) %>%
+  summarise_each(funs(sum), -c(1:4)) %>%
+  gather(key = Date, value = Pop, -1)
+
+ggplot(villesDepts,  aes(factor(Date), Pop, group=`Département`, col = `Département`)) + geom_line() + scale_y_log10()
+
+
+```
+
+
+# Extraire et stucturer du contenu Web brut
+
+## Récuperer l'ensemble des liens de billets d'un blog
+
+### On récupère les liens vers le classement chronologique des billets
+
+```{r elementr date_links}
+
+home_page <- read_html("http://elementr.hypotheses.org/")
+home_links <-  home_page %>%
+  html_nodes("a") %>%
+  html_attr("href")
+
+reg_query1 <- "/date/"
+dates_links <- home_links[grepl(home_links, pattern=regular_query)]
+```
+
+### On parcours ces pages pour en extraire les articles
+
+```{r elementr billets_links}
+posts_links <- character()
+
+for (thisLink in dates_links) {
+  this_page_links <- read_html(thisLink) %>%
+    html_nodes("a") %>%
+    html_attr("href")
+
+  reg_query2 <- "http://elementr.hypotheses.org/\\d"
+    
+  this_page_posts_links <- this_page_links[grepl(this_page_links, pattern=reg_query2)]
+  posts_links <- c(posts_links, this_page_posts_links)
+}
+```
+
+## Récuperer leur contenu
+
+```{r elementr billets_content}
+posts_content <- character()
+
+for (this_post in posts_links){
+  this_content <- read_html(this_post) %>%
+    html_node("article .entry-content") %>%
+    html_text()
+  posts_content <- c(posts_content, this_content)
+}
+```
+
+
+## L'analyser
+
