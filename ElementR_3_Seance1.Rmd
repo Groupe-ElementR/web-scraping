@@ -1,13 +1,14 @@
 ---
 title: "Extraire des données depuis Internet"
-date: "`r Sys.Date()`"
-author: "Robin Cura"
+date: "`r paste('Vague 3', 'Séance 1', Sys.Date(), sep=' - ')`"
+author: "ElementR - Robin Cura"
 output:
   rmdformats::readthedown:
     highlight: kate
     thumbnails: true
     lightbox: true
     gallery: true
+    code_folding: hide
 ---
 
 
@@ -17,7 +18,7 @@ library(rmdformats)
 
 ## Global options
 options(max.print="75")
-opts_chunk$set(echo=FALSE,
+opts_chunk$set(echo=TRUE,
 	             cache=TRUE,
                prompt=FALSE,
                tidy=TRUE,
@@ -27,133 +28,212 @@ opts_chunk$set(echo=FALSE,
 opts_knit$set(width=75)
 ```
 
-```{r chargement des packages généralistes}
-# Manipulation de données
-library(dplyr)
-library(tidyr)
-library(sp)
-
-# Cartographie
-library(ggplot2)
-library(mapview)
-
-# Connexion web
-library(jsonlite)
-library(curl)
-library(httr)
-```
-
-
 # Utiliser des *API* à travers des *packages* dédiés
 
-## Récuperer une liste de lieux depuis des pages Wikipedia
-
-```{r pkg wikipedia}
-library(WikipediR)
-
-```
-
+## Géocoder une liste de lieux
 
 ### Requête de récupération
 
+```{r geocodage}
+library(dplyr)
+library(photon) # devtools::install_github(repo = 'rCarto/photon')
+
+
+geogeoplaces <- data_frame(Nom = c("Institut de Géographie",
+                                   "Géographie-cités",
+                                   "PRODIG",
+                                   "Centre PMF",
+                                   "Centre Montreal",
+                                   "Olympe de Gouges"),
+                           Adresse = c("Institut de Géographie, 75005 Paris, France",
+                                      "Rue du Four, 75006 Paris, France",
+                                      "Rue Valette, 75005 Paris, France",
+                                      "90 rue de Tolbiac, 75013 Paris, France",
+                                      "105 rue de Tolbiac, 75013 Paris, France",
+                                      "Rue Albert Einstein, 75013 Paris, France"))
+
+geoCodingResults <- tryCatch(
+  geocode(geogeoplaces$Adresse, limit = 1, lang = "fr"),
+  error = function(e) readRDS("data/geoCodingResults.Rds")
+)
+
+geogeogeoplaces <- geogeoplaces %>%
+  bind_cols(geoCodingResults %>% select(lat, lon))
+
+```
+
 ### Conversion en format R
 
+```{r conversion spdf}
+library(sp)
+geogeogeoplaces <- as.data.frame(geogeogeoplaces, stringsAsFactors = FALSE)
+coordinates(geogeogeoplaces) <- ~lon + lat
+proj4string(geogeogeoplaces) <- CRS("+init=epsg:4326")
+```
+
 ### Cartographie
+
+```{r cartographie rapide}
+library(mapview)
+
+plot(geogeogeoplaces)
+tryCatch(
+  mapView(geogeogeoplaces)
+)
+```
 
 ## Trouver le plus court chemin entre ces lieux
 
 ### Requête de récupération
 
+```{r requete osrm}
+library(osrm) # devtools::install_github("rCarto/osrm")
+
+plusCourtItineraire <- tryCatch(
+  osrmTripGeom(geogeogeoplaces, sp = TRUE),
+  error = function(e) readRDS("data/plusCourtItineraire.Rds")
+)
+```
+
 ### Conversion en format R
 
+```{r recup osrm}
+geoitineraire <- plusCourtItineraire[[1]]
+str(geoitineraire)
+
+geoitineraire$summary
+```
+
 ### Cartographie
+
+```{r carto osrm}
+plot(geoitineraire$trip)
+tryCatch(
+  mapView(geoitineraire$trip),
+  error = function(e) plot(geoitineraire$trip)
+)
+```
 
 ## Créer un profil du trajet
 
 ### Segmenter le trajet
 
+```{r segmentation lines}
+library(magrittr)
+coordsLists <- lapply(geoitineraire$trip@lines, function(x){x@Lines[[1]]@coords})
+coordsDF <- lapply(coordsLists, function(x){as.data.frame(x)}) %>%
+  rbind_all() %>%
+  set_colnames(c("lon", "lat"))
+```
+
 ### Récuperer l'altitude
+
+```{r altitude geonames}
+library(geonames)
+coordsDF$index <- as.numeric(row.names(coordsDF))
+altitudeDF <- coordsDF[seq(from = 1, to = nrow(coordsDF), by = 10),]
+
+tryCatch(
+  options(geonamesUsername = "parisgeo")
+)
+
+altitudePoints<- tryCatch(
+  apply(altitudeDF, MARGIN = 1, FUN = function(x){
+    res <- GNsrtm3(lat=x["lat"], lng = x["lon"]);
+    res$srtm3}),
+   error = function(e) readRDS("data/altitudePoints.Rds")
+)
+
+altitudeDF$alt <- altitudePoints
+
+```
 
 ### Affichage du profil du trajet
 
-```{r}
-
-library(xml2)
-library(rvest)
-
-# Utilisation d'API
-
-library(osrm)
-library(ggmap) 
-library(rgbif)
+```{r plot profil}
+ggplot(altitudeDF, aes(x = index, y = alt)) + geom_line(group=1) + coord_equal(ratio=1)
 ```
 
 
 
 # Récuperer du contenu HTML formaté
 
+## Récupération d'une page
 
-```{r pkg rvest}
-library(rvest)
+```{r recup page wikipedia}
 library(xml2)
+
+rawWikipediaPage <- tryCatch(
+  read_html(x = "https://fr.wikipedia.org/wiki/Liste_des_communes_de_France_les_plus_peupl%C3%A9es"),
+  error = function(e) readRDS("data/rawWikipediaPage.Rds")
+)
 ```
 
+## Conversion en format R
 
-```{r, eval=FALSE}
-baseContent <- read_html(x = "https://fr.wikipedia.org/wiki/Liste_des_communes_de_France_les_plus_peupl%C3%A9es") 
+```{r extraction df}
+library(rvest)
+library(magrittr)
 
-baseTables <- baseContent %>% html_nodes(".wikitable")
-blob <- baseTables[1]
+rawWikiTable <- rawWikipediaPage %>%
+  html_nodes(".wikitable") %>%
+  extract2(1) %>%
+  html_table(trim = TRUE, dec = ",")
+```
 
-blob2 <- gsub("\\[[^\\]]*\\]", "", blob, perl=TRUE)
+## Nettoyage
 
+```{r nettoyage colonnes}
+library(stringr)
 
-dfList <- lapply(baseTables, function(x){return(html_table(x, trim = TRUE, dec = ","))})
-villesFr <- dfList[[1]]
+communesFr <- rawWikiTable
 
-removeBrackets <- function(x){
-  gsub("\\[[^\\]]*\\]", "", x, perl=TRUE)
-}
+communesFr <- communesFr %>%
+  set_colnames(
+    gsub(x = colnames(.), pattern = "\\[[^\\]]*\\]", replacement = "", perl=TRUE) %>% # Suppression des [*]
+    str_replace_all( string = ., pattern = "\\s", replacement = "") %>% # Suppression des espaces
+    str_replace_all(string = ., pattern = fixed(","), replacement = "") %>% # Suppression des ","
+    str_replace_all(string = ., pattern = fixed("é"), replacement = "e")
+  ) %>%
+  rename(Rank = `#o`)
+  
+```
 
-removeBraces <- function(x){
-  gsub("\\([^\\]]*\\)", "", x, perl=TRUE)
-}
+```{r nettoyage contenu}
+library(dplyr)
 
-removeSpaces <- function(x){
-  str_replace_all(x, "\\s", "")
-}
+communesFr <- communesFr %>%
+  mutate_each(funs(gsub(x = ., pattern = "\\[[^\\]]*\\]", replacement = "", perl=TRUE))) %>% # Suppression des [*]
+  mutate_each(funs(str_replace_all(string = ., pattern = fixed(","), replacement = ""))) %>% # Suppression des ","
+  mutate_each(funs(gsub(x = ., pattern = "\\([^\\]]*\\)", replacement = "", perl=TRUE))) %>% # Suppression des (*)
+  mutate_each(funs(str_replace_all(string = ., pattern = fixed("+"), replacement = ""))) %>% # Suppression des "+"
+  mutate_each(vars = -c(1:4), funs(str_replace_all( string = ., pattern = "\\s", replacement = ""))) %>% # Suppression des espaces
+  mutate_each(vars = -c(1:4), funs(as.numeric)) # Conversion en numeric
+```
 
-removeCommas <- function(x){
-  str_replace_all(x, fixed(","), "")
-}
+## Utilisation
 
-removePluses <- function(x){
-  str_replace_all(x, fixed("+"), "")
-}
+```{r analyse communes peuplées}
+library(tidyr)
+library(ggplot2)
 
-colnames(villesFr) <- colnames(villesFr) %>%
-  removeBrackets() %>%
-  removeSpaces() %>%
-  removeCommas()
-
-villesFr2 <- villesFr %>%
-  mutate_each(funs(removeBrackets)) %>%
-  mutate_each(funs(removeCommas)) %>%
-  mutate_each(funs(removeBraces)) %>%
-  mutate_each(funs(removePluses)) %>%
-  mutate_each(funs(removeSpaces), -c(1:4)) %>%
-  mutate_each(funs(as.numeric), -c(1:4))
-
-villesDepts <- villesFr2 %>%
-  group_by(Département) %>%
+communesParRegion<- communesFr %>%
+  group_by(Region) %>%
   summarise_each(funs(sum), -c(1:4)) %>%
-  gather(key = Date, value = Pop, -1)
+  gather(key = Annee, value = Pop, -Region) %>%
+  group_by(Annee) %>%
+  mutate(label_y = cumsum(Pop) - .5*Pop) %>%
+  mutate(label_name = str_wrap(Region, width=12))
 
-ggplot(villesDepts,  aes(factor(Date), Pop, group=`Département`, col = `Département`)) + geom_line() + scale_y_log10()
-
+ggplot(communesParRegion,
+       aes(factor(Annee), Pop, group=Region, fill = Region), col = "black") +
+  geom_bar(stat = "identity") +
+   geom_text(aes(y=label_y, label=label_name), col='black', size = 2.5, check_overlap = TRUE) +
+  scale_fill_manual(values = rainbow(20)) +
+  theme_bw() +
+  theme(legend.position="bottom")
 
 ```
-
 
 # Extraire et stucturer du contenu Web brut
 
@@ -169,7 +249,7 @@ home_links <-  home_page %>%
   html_attr("href")
 
 reg_query1 <- "/date/"
-dates_links <- home_links[grepl(home_links, pattern=regular_query)]
+dates_links <- home_links[grepl(home_links, pattern=reg_query1)]
 ```
 
 ### On parcours ces pages pour en extraire les articles
@@ -191,6 +271,8 @@ for (thisLink in dates_links) {
 
 ## Récuperer leur contenu
 
+### Contenu brut
+
 ```{r elementr billets_content}
 posts_content <- character()
 
@@ -202,6 +284,30 @@ for (this_post in posts_links){
 }
 ```
 
+### Nettoyage
+
+```{r}
+library(tm.plugin.webmining)
+
+clean_posts_content <- unlist(lapply(posts_content, extractHTMLStrip))
+```
+
 
 ## L'analyser
 
+```{r elementr wordcloud}
+library(tm)
+library(wordcloud)
+library(RColorBrewer)
+
+textCorpus <- Corpus(VectorSource(clean_posts_content)) %>%
+  tm_map(content_transformer(tolower)) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(PlainTextDocument) %>%
+  tm_map(removeWords, stopwords('french')) %>%
+  wordcloud(max.words = 100,
+            random.order = FALSE,
+            random.color = FALSE,
+            colors=brewer.pal(6, "Dark2")
+            )
+```
