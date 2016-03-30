@@ -322,7 +322,9 @@ communesParRegion &lt;-<span class="st"> </span>communesFr %&gt;%<span class="st
 <h2>Récuperer l’ensemble des liens de billets d’un blog</h2>
 <div id="on-recupere-les-liens-vers-le-classement-chronologique-des-billets" class="section level3">
 <h3>On récupère les liens vers le classement chronologique des billets</h3>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">home_page &lt;-<span class="st"> </span><span class="kw">read_html</span>(<span class="st">&quot;http://elementr.hypotheses.org/&quot;</span>)
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">home_page &lt;-<span class="st"> </span><span class="kw">tryCatch</span>(<span class="kw">read_html</span>(<span class="st">&quot;http://elementr.hypotheses.org/&quot;</span>), <span class="dt">error =</span> function(e) <span class="kw">readRDS</span>(<span class="st">&quot;data/home_page.Rds&quot;</span>))
+
+
 home_links &lt;-<span class="st"> </span>home_page %&gt;%<span class="st"> </span><span class="kw">html_nodes</span>(<span class="st">&quot;a&quot;</span>) %&gt;%<span class="st"> </span><span class="kw">html_attr</span>(<span class="st">&quot;href&quot;</span>)
 
 reg_query1 &lt;-<span class="st"> &quot;/date/&quot;</span>
@@ -339,6 +341,10 @@ for (thisLink in dates_links) {
     
     this_page_posts_links &lt;-<span class="st"> </span>this_page_links[<span class="kw">grepl</span>(this_page_links, <span class="dt">pattern =</span> reg_query2)]
     posts_links &lt;-<span class="st"> </span><span class="kw">c</span>(posts_links, this_page_posts_links)
+}
+
+if (<span class="kw">length</span>(posts_links) ==<span class="st"> </span><span class="dv">0</span>) {
+    posts_links &lt;-<span class="st"> </span><span class="kw">readRDS</span>(<span class="st">&quot;data/posts_links.Rds&quot;</span>)
 }</code></pre></div>
 </div>
 </div>
@@ -352,6 +358,10 @@ for (this_post in posts_links) {
     this_content &lt;-<span class="st"> </span><span class="kw">read_html</span>(this_post) %&gt;%<span class="st"> </span><span class="kw">html_node</span>(<span class="st">&quot;article .entry-content&quot;</span>) %&gt;%<span class="st"> </span>
 <span class="st">        </span><span class="kw">html_text</span>()
     posts_content &lt;-<span class="st"> </span><span class="kw">c</span>(posts_content, this_content)
+}
+
+if (<span class="kw">length</span>(posts_content) ==<span class="st"> </span><span class="dv">1</span>) {
+    posts_content &lt;-<span class="st"> </span><span class="kw">readRDS</span>(<span class="st">&quot;data/posts_links.Rds&quot;</span>)
 }</code></pre></div>
 </div>
 <div id="nettoyage-1" class="section level3">

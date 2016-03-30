@@ -291,7 +291,9 @@ ggplot(communesParRegion, aes(factor(Annee), Pop, group = Region, fill = Region)
 
 
 ```r
-home_page <- read_html("http://elementr.hypotheses.org/")
+home_page <- tryCatch(read_html("http://elementr.hypotheses.org/"), error = function(e) readRDS("data/home_page.Rds"))
+
+
 home_links <- home_page %>% html_nodes("a") %>% html_attr("href")
 
 reg_query1 <- "/date/"
@@ -312,6 +314,10 @@ for (thisLink in dates_links) {
     this_page_posts_links <- this_page_links[grepl(this_page_links, pattern = reg_query2)]
     posts_links <- c(posts_links, this_page_posts_links)
 }
+
+if (length(posts_links) == 0) {
+    posts_links <- readRDS("data/posts_links.Rds")
+}
 ```
 
 ## Récuperer leur contenu
@@ -326,6 +332,10 @@ for (this_post in posts_links) {
     this_content <- read_html(this_post) %>% html_node("article .entry-content") %>% 
         html_text()
     posts_content <- c(posts_content, this_content)
+}
+
+if (length(posts_content) == 1) {
+    posts_content <- readRDS("data/posts_links.Rds")
 }
 ```
 
