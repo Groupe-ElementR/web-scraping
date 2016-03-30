@@ -9,6 +9,7 @@ output:
     lightbox: true
     gallery: true
     code_folding: hide
+    keep_md: TRUE
 ---
 
 
