@@ -1,0 +1,183 @@
+
+---
+title: "Extraire des données depuis Internet<br />(1/3) - Utilisation d'API natives</h2>"
+date: "ElementR, Vague 3, Séance 1 - 30/03/2016"
+author: "Robin Cura (UMR Géographie-cités)"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+    thumbnails: true
+    lightbox: true
+    gallery: true
+    code_folding: hide
+    keep_md: TRUE
+---
+
+```{r knitr_init, echo=FALSE, cache=FALSE}
+library(knitr)
+library(rmdformats)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+	             cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+Ce tutorial vise à donner un exemple d'utilisation d'*API*^[Une *API*, ou [Interface de Programmation](https://fr.wikipedia.org/wiki/Interface_de_programmation) est un service mis à disposition d'un public (complet ou restreint) lui permettant de récuperer du contenu (*web* ici) de manière automatique.] depuis **R**, autour d'un exercice complet qui consiste à préparer le parcours d'un événement scientifique inscrit dans un certain nombre de "lieux de la géographie" quantitative parisienne.
+La démarche est composée de 3 étapes :  
+
+  1. Doter les lieux choisis de coordonnées géographiques, c'est le **géocodage**,  
+
+  2. Rechercher un trajet entre ces lieux, c'est une opération de **calcul d'itinéraire**,  
+
+  3. Établir le profil altimétrique du trajet résultant afin de **contextualiser** l'itinéraire.
+  
+Chacune de ces étapes fait appel à une *API* [libre](https://fr.wikipedia.org/wiki/Licence_libre) différente, choisie pour être aussi simple que possible à utiliser. Il existe naturellement de nombreuses autres manières de parvenir aux mêmes résultats, la démarche choisit ici est donc uniquement illustrative et pédagogique. 
+
+# Geocoder une liste de lieux
+
+## Données sources
+
+On crée un *data.frame* qui contient les lieux que l'on souhaite géocoder, *ie.* quelques lieux de la géographie parisienne.
+On utilise ici le package `tibble` et sa fonction `data_frame()` plutôt que la fonction de base `data.frame()`. Les objets de type `data_frame` sont des *data.frame* améliorés, plus rapides, à la syntaxe moins verbeuse (plus besoin de faire appel aux sempiternels `stringsAsFactors = FALSE` etc.), et qui sont dotés d'un aperçu plus condensé et lisible. Ce format `data_frame` (ou `tbl_df`) a été apporté par le package `dplyr` et est extensivement utilisé dans l'ensemble des packages du *Hadleyverse*^[Ensemble des *packages* créés par Hadley Wickham, un développeur **R** prolifique qui a notamment créé `ggplot2`, `reshape2`, `(d)plyr`. En voir une [présentation complète](https://barryrowlingson.github.io/hadleyverse)]
+
+```{r données base, results='hide', }
+library(tibble)
+
+geogeoplaces <- data_frame(Nom = c("Institut de Géographie",
+                                   "Géographie-cités",
+                                   "PRODIG",
+                                   "Centre PMF",
+                                   "Centre Montreal",
+                                   "Olympe de Gouges"),  
+                           
+                           Adresse = c("Institut de Géographie, 75005 Paris, France",
+                                      "Rue du Four, 75006 Paris, France",
+                                      "Rue Valette, 75005 Paris, France",
+                                      "90 rue de Tolbiac, 75013 Paris, France",
+                                      "105 rue de Tolbiac, 75013 Paris, France",
+                                      "Rue Albert Einstein, 75013 Paris, France")
+                           )
+```
+
+
+## Récuperer les coordonnées via une API de géocodage
+
+On utilise pour cette étape le package `photon`^[[En consulter la page de développement](https://github.com/rCarto/photon)], créé par Timothée Giraud et décrit sur [son blog](https://rgeomatic.hypotheses.org/622).
+La fonction `geocode()` prend en entrée un vecteur des adresses et renvoit un *data.frame* contenant les adresses et coordonnées probables correspondant aux entrées. On choisit ici de limiter la sortie au meilleur résultat pour chaque adresse (paramètre `limit`), afin de pouvoir simplifier l'enrichissement des données initiales. Le paramètre `lang` définir la langue de l'adresse, et améliore ainsi la précision du géocodage.
+
+**N.B.** :  La fonction `kable()` (*knit table*), du package `knitr` permet d'afficher un *data.frame*, dans un document *markdown* tel que celui-ci, de plus élégante manière qu'un simple `print()`.
+
+```{r geocodage}
+library(photon) # devtools::install_github(repo = 'rCarto/photon')
+
+geoCodingResults <- geocode(geogeoplaces$Adresse, limit = 1, lang = "fr")
+
+kable(geoCodingResults)
+```
+
+## On enrichit le tableau initial
+
+La fonction renvoit un nouveau *data.frame* contenant l'ensemble des informations liées au géocodage, ce qui permet d'évaluer la qualité de celui-ci et de vérifier que des erreurs n'ont pas été commises.
+On ne gardera ici que les colonnes correspondant aux coordonnées (exprimées en latitudes et longitudes, donc en degrés inscrits dans le système WGS84^[Comme à peu près toutes les informations spatiales disponibles sur Internet.]).
+On va alors pouvoir enrichir le tableau initial en lui concaténant ces deux nouvelles colonnes résultantes.
+On isole les deux colonnes avec la fonction `select()` du package `dplyr`, et on les concatène au tableau initial avec `bind_cols()` issu du même package.
+
+```{r ajout coordonnées}
+library(dplyr)
+
+geogeogeoplaces <- geogeoplaces %>%
+  bind_cols(select(geoCodingResults, lat, lon))
+
+kable(geogeogeoplaces)
+```
+
+
+## Conversion en format R
+
+```{r conversion spdf}
+library(sp)
+geogeogeoplaces <- as.data.frame(geogeogeoplaces, stringsAsFactors = FALSE)
+coordinates(geogeogeoplaces) <- ~lon + lat
+proj4string(geogeogeoplaces) <- CRS("+init=epsg:4326")
+```
+
+## Cartographie
+
+```{r cartographie rapide}
+library(mapview)
+
+plot(geogeogeoplaces)
+mapView(geogeogeoplaces)
+```
+
+# Trouver le plus court chemin entre ces lieux
+
+## Requête de récupération
+
+```{r requete osrm}
+library(osrm) # devtools::install_github("rCarto/osrm")
+
+plusCourtItineraire <- osrmTrip(geogeogeoplaces)
+```
+
+## Conversion en format R
+
+```{r recup osrm}
+geoitineraire <- plusCourtItineraire[[1]]
+str(geoitineraire)
+
+geoitineraire$summary
+```
+
+## Cartographie
+
+```{r carto osrm}
+plot(geoitineraire$trip)
+
+mapView(geoitineraire$trip)
+
+```
+
+# Créer un profil du trajet
+
+## Segmenter le trajet
+
+```{r segmentation lines}
+library(magrittr)
+coordsLists <- lapply(geoitineraire$trip@lines, function(x){x@Lines[[1]]@coords})
+coordsDF <- lapply(coordsLists, function(x){as.data.frame(x)}) %>%
+  rbind_all() %>%
+  set_colnames(c("lon", "lat"))
+```
+
+## Récuperer l'altitude
+
+```{r altitude geonames}
+library(geonames)
+coordsDF$index <- as.numeric(row.names(coordsDF))
+altitudeDF <- coordsDF[seq(from = 1, to = nrow(coordsDF), by = 10),]
+
+options(geonamesUsername = "parisgeo")
+
+altitudePoints<- apply(altitudeDF, MARGIN = 1, FUN = function(x){
+    res <- GNsrtm3(lat=x["lat"], lng = x["lon"]);
+    res$srtm3}
+    )
+
+altitudeDF$alt <- altitudePoints
+
+```
+
+## Affichage du profil du trajet
+
+```{r plot profil}
+library(ggplot2)
+ggplot(altitudeDF, aes(x = index, y = alt)) + geom_line(group=1) + coord_equal(ratio=1)
+```
