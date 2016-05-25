@@ -1,0 +1,109 @@
+---
+title: "Extraire des données depuis Internet<br />(3/3) - <i>Scraper</i> un site internet</h2>"
+date: "ElementR, Vague 3, Séance 1 - 30/03/2016"
+author: "Robin Cura (UMR Géographie-cités)"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+    thumbnails: true
+    lightbox: true
+    gallery: true
+    code_folding: hide
+    keep_md: TRUE
+---
+
+
+```{r knitr_init, echo=FALSE, cache=FALSE}
+library(knitr)
+library(rmdformats)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+	             cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+# Extraire et stucturer du contenu Web brut
+
+## Récuperer l'ensemble des liens de billets d'un blog
+
+### On récupère les liens vers le classement chronologique des billets
+
+```{r elementr date_links}
+
+home_page <- read_html("http://elementr.hypotheses.org/")
+
+
+home_links <-  home_page %>%
+  html_nodes("a") %>%
+  html_attr("href")
+
+reg_query1 <- "/date/"
+dates_links <- home_links[grepl(home_links, pattern=reg_query1)]
+```
+
+### On parcours ces pages pour en extraire les articles
+
+```{r elementr billets_links}
+posts_links <- character()
+
+for (thisLink in dates_links) {
+  this_page_links <- read_html(thisLink) %>%
+    html_nodes("a") %>%
+    html_attr("href")
+
+  reg_query2 <- "http://elementr.hypotheses.org/\\d"
+    
+  this_page_posts_links <- this_page_links[grepl(this_page_links, pattern=reg_query2)]
+  posts_links <- c(posts_links, this_page_posts_links)
+}
+```
+
+## Récuperer leur contenu
+
+### Contenu brut
+
+```{r elementr billets_content}
+posts_content <- character()
+
+for (this_post in posts_links){
+  this_content <- read_html(this_post) %>%
+    html_node("article .entry-content") %>%
+    html_text()
+  posts_content <- c(posts_content, this_content)
+}
+```
+
+### Nettoyage
+
+```{r}
+library(tm.plugin.webmining)
+
+clean_posts_content <- unlist(lapply(posts_content, extractHTMLStrip))
+```
+
+
+## L'analyser
+
+```{r elementr wordcloud}
+library(tm)
+library(wordcloud)
+library(RColorBrewer)
+
+textCorpus <- Corpus(VectorSource(clean_posts_content)) %>%
+  tm_map(content_transformer(tolower)) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(PlainTextDocument) %>%
+  tm_map(removeWords, stopwords('french')) %>%
+  wordcloud(max.words = 100,
+            random.order = FALSE,
+            random.color = FALSE,
+            colors=brewer.pal(6, "Dark2")
+            )
+```

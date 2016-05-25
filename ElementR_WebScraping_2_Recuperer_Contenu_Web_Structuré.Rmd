@@ -1,0 +1,106 @@
+---
+title: "Extraire des données depuis Internet<br />(1/3) - Récuperer du contenu web formatté</h2>"
+date: "ElementR, Vague 3, Séance 1 - 30/03/2016"
+author: "Robin Cura (UMR Géographie-cités)"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+    thumbnails: true
+    lightbox: true
+    gallery: true
+    code_folding: hide
+    keep_md: TRUE
+---
+
+
+```{r knitr_init, echo=FALSE, cache=FALSE}
+library(knitr)
+library(rmdformats)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+	             cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+# Récuperer du contenu HTML formaté
+
+## Récupération d'une page
+
+```{r recup page wikipedia}
+library(xml2)
+
+rawWikipediaPage <- read_html(x = "https://fr.wikipedia.org/wiki/Liste_des_communes_de_France_les_plus_peupl%C3%A9es")
+```
+
+## Conversion en format R
+
+```{r extraction df}
+library(rvest)
+library(magrittr)
+
+rawWikiTable <- rawWikipediaPage %>%
+  html_nodes(".wikitable") %>%
+  extract2(1) %>%
+  html_table(trim = TRUE, dec = ",")
+```
+
+## Nettoyage
+
+```{r nettoyage colonnes}
+library(stringr)
+
+communesFr <- rawWikiTable
+
+communesFr <- communesFr %>%
+  set_colnames(
+    gsub(x = colnames(.), pattern = "\\[[^\\]]*\\]", replacement = "", perl=TRUE) %>% # Suppression des [*]
+    str_replace_all( string = ., pattern = "\\s", replacement = "") %>% # Suppression des espaces
+    str_replace_all(string = ., pattern = fixed(","), replacement = "") %>% # Suppression des ","
+    str_replace_all(string = ., pattern = fixed("é"), replacement = "e")
+  ) %>%
+  rename(Rank = `#o`)
+  
+```
+
+```{r nettoyage contenu}
+library(dplyr)
+
+communesFr <- communesFr %>%
+  mutate_each(funs(gsub(x = ., pattern = "\\[[^\\]]*\\]", replacement = "", perl=TRUE))) %>% # Suppression des [*]
+  mutate_each(funs(str_replace_all(string = ., pattern = fixed(","), replacement = ""))) %>% # Suppression des ","
+  mutate_each(funs(gsub(x = ., pattern = "\\([^\\]]*\\)", replacement = "", perl=TRUE))) %>% # Suppression des (*)
+  mutate_each(funs(str_replace_all(string = ., pattern = fixed("+"), replacement = ""))) %>% # Suppression des "+"
+  mutate_each(vars = -c(1:4), funs(str_replace_all( string = ., pattern = "\\s", replacement = ""))) %>% # Suppression des espaces
+  mutate_each(vars = -c(1:4), funs(as.numeric)) # Conversion en numeric
+```
+
+## Utilisation
+
+```{r analyse communes peuplées}
+library(tidyr)
+library(ggplot2)
+
+communesParRegion<- communesFr %>%
+  group_by(Region) %>%
+  summarise_each(funs(sum), -c(1:4)) %>%
+  gather(key = Annee, value = Pop, -Region) %>%
+  group_by(Annee) %>%
+  mutate(label_y = cumsum(Pop) - .5*Pop) %>%
+  mutate(label_name = str_wrap(Region, width=12))
+
+ggplot(communesParRegion,
+       aes(factor(Annee), Pop, group=Region, fill = Region), col = "black") +
+  geom_bar(stat = "identity") +
+   geom_text(aes(y=label_y, label=label_name), col='black', size = 2.5, check_overlap = TRUE) +
+  scale_fill_manual(values = rainbow(20)) +
+  theme_bw() +
+  theme(legend.position="bottom")
+
+```
