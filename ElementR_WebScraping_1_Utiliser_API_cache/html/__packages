@@ -1,0 +1,14 @@
+base
+knitr
+rmdformats
+dplyr
+photon
+sp
+leaflet
+mapview
+osrm
+magrittr
+geonames
+ggplot2
+tibble
+ggmap

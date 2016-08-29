@@ -3,6 +3,8 @@ title: "Extraire des données depuis Internet"
 date: "`r paste('Vague 3', 'Séance 1', Sys.Date(), sep=' - ')`"
 author: "ElementR - Robin Cura"
 output:
+  #html_document:
+  
   rmdformats::readthedown:
     highlight: kate
     thumbnails: true
@@ -152,6 +154,7 @@ altitudeDF$alt <- altitudePoints
 ### Affichage du profil du trajet
 
 ```{r plot profil}
+library(ggplot2)
 ggplot(altitudeDF, aes(x = index, y = alt)) + geom_line(group=1) + coord_equal(ratio=1)
 ```
 
